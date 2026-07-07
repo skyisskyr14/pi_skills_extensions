@@ -1,0 +1,17 @@
+# 会话文件（太大、私密）
+sessions/
+
+# 敏感信息
+auth.json
+settings.json
+trust.json
+
+# pi 内部目录
+bin/
+npm/
+git/
+node_modules/
+
+# 系统文件
+.DS_Store
+Thumbs.db

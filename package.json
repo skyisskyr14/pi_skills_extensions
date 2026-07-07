@@ -1,0 +1,10 @@
+{
+  "name": "pi-toolbox",
+  "version": "1.0.0",
+  "description": "我的 pi agent skills 和 extensions 集合",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./extensions"],
+    "skills": ["./skills"]
+  }
+}
