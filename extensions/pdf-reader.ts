@@ -117,36 +117,30 @@ print(json.dumps({"total": total, "rendered": len(results), "pages": results, "o
           }
         }
 
-        // 同时返回文本内容和图片内容
-        // 多模态模型能看图片，纯文本模型能读文字
+        // 图片在前，文字在后
+        // 多模态模型会优先处理图片；纯文本模型自动 fallback 到文字
         const allContent: any[] = [];
-        const textLines: string[] = [];
 
-        for (const p of data.pages) {
-          textLines.push(
-            `\n=== 第 ${p.page}/${data.total} 页 ===\n${p.text}\n[图片: ${p.img}]`
-          );
-        }
-
-        // 先放文字
-        allContent.push({
-          type: "text",
-          text:
-            `PDF: ${pdfPath}（共 ${data.total} 页，已渲染 ${data.rendered} 页，DPI=${dpi}）\n` +
-            "图片已保存到: " + data.out_dir + "\n" +
-            textLines.join("") + "\n" +
-            "提示: 如需分析图表，请用 read 工具读取上面的图片路径。",
-        });
-
-        // 再放前 3 页的图片（避免上下文爆炸）
-        const maxImages = 3;
+        // 把图片放前面（最多 5 页，避免上下文爆炸）
+        const maxImages = 5;
         allContent.push(...imgContents.slice(0, maxImages));
-        if (imgContents.length > maxImages) {
-          allContent.push({
-            type: "text",
-            text: `\n(仅展示前 ${maxImages} 页图片，其余 ${imgContents.length - maxImages} 页请用 read 工具按路径读取)`,
-          });
+
+        // 文字作为补充说明
+        const textLines: string[] = [];
+        for (const p of data.pages) {
+          if (p.text_len > 0) {
+            textLines.push(`\n--- 第 ${p.page}/${data.total} 页 OCR 文字 ---\n${p.text}`);
+          }
         }
+
+        const textInfo =
+          `PDF: ${pdfPath}（共 ${data.total} 页，已渲染 ${data.rendered} 页为图片，DPI=${dpi}）\n` +
+          `图片保存到: ${data.out_dir}\n` +
+          (textLines.length > 0 ? textLines.join("") + "\n" : "") +
+          `# 重要：你已收到 ${Math.min(imgContents.length, maxImages)} 页图片，请基于图片内容分析，不要只看 OCR 文字！OCR 文字仅供辅助。` +
+          (imgContents.length > maxImages ? `\n剩余 ${imgContents.length - maxImages} 页请用 read 工具读取: ${data.out_dir}/page_*.png` : "");
+
+        allContent.push({ type: "text", text: textInfo });
 
         return {
           content: allContent,
