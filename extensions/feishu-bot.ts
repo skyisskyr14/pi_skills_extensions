@@ -1,6 +1,11 @@
 // 飞书 Pi 多项目机器人 v8
 // 总 agent → 直接对话 + 项目路由 + sessions/switch
 // 项目 agent → sendUserMessage + agent_end + sessions/switch
+//
+// 配置方式（三选一）：
+//   1. 环境变量: FEISHU_APP_ID, FEISHU_APP_SECRET, FEISHU_ENCRYPT_KEY
+//   2. 修改下方常量
+//   3. 首次运行时 pi 会提示配置
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
@@ -8,9 +13,9 @@ import { createHash, createCipheriv, createDecipheriv } from "node:crypto";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-const APP_ID = "cli_aac761d877f8dbe3";
-const APP_SECRET = "GoCDIwtbdaIBUwF1iqf2OeQUJ6QwTI2C";
-const ENCRYPT_KEY = "tqI9UA7zdCeKMqp2i4YUFhLQm08wvjyZ";
+const APP_ID = process.env.FEISHU_APP_ID || "cli_aac761d877f8dbe3";
+const APP_SECRET = process.env.FEISHU_APP_SECRET || "GoCDIwtbdaIBUwF1iqf2OeQUJ6QwTI2C";
+const ENCRYPT_KEY = process.env.FEISHU_ENCRYPT_KEY || "tqI9UA7zdCeKMqp2i4YUFhLQm08wvjyZ";
 const FEISHU_BASE = "https://open.feishu.cn/open-apis";
 const MASTER_PORT = 8087;
 
