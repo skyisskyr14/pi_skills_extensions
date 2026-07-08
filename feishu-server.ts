@@ -107,8 +107,13 @@ Bun.serve({
             return resp(JSON.stringify({ code: 0 }));
           }
 
-          // 直接对话：转发到总 agent 的 projectPort
-          sendToChat(chatId, "总 agent 直接对话暂不支持，请通过项目路由").catch(() => {});
+          // 直接对话：转发到总 agent 本地端点
+          const masterInfo = registry.get("总 agent");
+          if (masterInfo) {
+            fetch(`http://127.0.0.1:${masterInfo.port}/ask`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: text, chatId }), signal: AbortSignal.timeout(5000) }).catch(() => {});
+          } else {
+            sendToChat(chatId, "总 agent 未就绪，请等待注册完成").catch(() => {});
+          }
           return resp(JSON.stringify({ code: 0 }));
         }
       } catch (e: any) { lastDebug.error = e.message; }
