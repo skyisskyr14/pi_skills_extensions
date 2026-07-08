@@ -107,6 +107,18 @@ async function switchSession(cwd: string, target: string, label: string): Promis
   return `未匹配「${target}」，发 sessions 查看`;
 }
 
+// ── HTTP 注册辅助 ──
+async function registerToMaster(port: number, name: string, cwd: string) {
+  try {
+    const r = await fetch(`http://127.0.0.1:${MASTER_PORT}/register`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, cwd, port }),
+      signal: AbortSignal.timeout(3000),
+    });
+    return (await r.json()).ok;
+  } catch { return false; }
+}
+
 // ── 消费 agent_end 队列 ──
 function consumeReply(replyQueue: Map<string, PendingItem>, messages: any[]): string | null {
   if (replyQueue.size === 0) return null;
@@ -311,20 +323,20 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
-  // 自动注册（session_start）
+  // 自动注册（仅当总 agent 在线时）
   pi.on("session_start", () => {
     setTimeout(async () => {
       if (server) return;
+      // 先检测总 agent 是否在线
+      try {
+        await fetch(`http://127.0.0.1:${MASTER_PORT}/feishu/health`, { signal: AbortSignal.timeout(2000) });
+      } catch {
+        return; // 总 agent 不在线，不注册
+      }
       server = startProjectHttp();
       server.listen(projectPort, async () => {
-        try {
-          const r = await fetch(`http://127.0.0.1:${MASTER_PORT}/register`, {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name, cwd, port: projectPort }),
-            signal: AbortSignal.timeout(3000),
-          });
-          console.log(`[agent] 「${name}」自动注册${(await r.json()).ok ? "ok" : "失败"}`);
-        } catch { console.log(`[agent] 「${name}」总 agent 不在线`); }
+        const ok = await registerToMaster(projectPort, name, cwd);
+        if (ok) console.log(`[agent] 「${name}」自动注册`);
       });
     }, 1500);
   });
