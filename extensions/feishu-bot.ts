@@ -19,7 +19,7 @@ const ENCRYPT_KEY = process.env.FEISHU_ENCRYPT_KEY || "tqI9UA7zdCeKMqp2i4YUFhLQm
 const FEISHU_BASE = "https://open.feishu.cn/open-apis";
 const MASTER_PORT = 8087;
 
-let accessToken = "", tokenExpire = 0;
+let accessToken = "", tokenExpire = 0, stopped = false;
 let server: ReturnType<typeof createServer> | null = null;
 let lastDebug: any = {};
 let piApi: ExtensionAPI | null = null;
@@ -175,9 +175,10 @@ export default function (pi: ExtensionAPI) {
     });
 
     pi.registerCommand("feishu-bot-start", {
-      description: "启动总 agent（直接对话 + 项目路由）",
+      description: "启动总 agent",
       async handler(_args, ctx) {
-        if (server) { ctx.ui.notify("已运行", "info"); return; }
+        if (server && !stopped) { ctx.ui.notify("已运行", "info"); return; }
+        if (stopped) { stopped = false; ctx.ui.notify("总 agent 已恢复", "info"); return; }
         server = createServer(async (req, res) => {
           // ── 飞书事件 ──
           if (req.url === "/feishu/event" && req.method === "POST") {
@@ -192,6 +193,8 @@ export default function (pi: ExtensionAPI) {
                 res.writeHead(200, { "Content-Type": "application/json" });
                 res.end(JSON.stringify({ challenge: dec.challenge })); return;
               }
+
+              if (stopped) { res.writeHead(503, { "Content-Type": "application/json" }); res.end('{"error":"stopped"}'); return; }
 
               // 消息事件
               if (dec.header?.event_type === "im.message.receive_v1") {
@@ -253,8 +256,8 @@ export default function (pi: ExtensionAPI) {
           }
 
           // ── 管理端点 ──
-          if (req.url === "/feishu/debug") { res.writeHead(200); res.end(JSON.stringify(lastDebug, null, 2)); return; }
-          if (req.url === "/feishu/health") { res.writeHead(200); res.end('{"status":"ok"}'); return; }
+          if (req.url === "/feishu/debug") { res.writeHead(200); res.end(JSON.stringify({ ...lastDebug, stopped }, null, 2)); return; }
+          if (req.url === "/feishu/health") { res.writeHead(200); res.end(JSON.stringify({ status: stopped ? "stopped" : "ok" })); return; }
           if (req.url === "/register" && req.method === "POST") {
             const b = await parseBody(req); const i: any = JSON.parse(b);
             registry.set(i.name.toLowerCase(), { ...i, lastSeen: Date.now() });
@@ -265,7 +268,14 @@ export default function (pi: ExtensionAPI) {
         server.listen(MASTER_PORT, () => ctx.ui.notify(`总 agent :${MASTER_PORT}（直接对话+路由）`, "info"));
       },
     });
-    pi.registerCommand("feishu-bot-stop", { description: "停止", async handler(_args, ctx) { if (server) { server.close(); server = null; } ctx.ui.notify("已停止", "info"); } });
+    pi.registerCommand("feishu-bot-stop", {
+      description: "停止总 agent",
+      async handler(_args, ctx) {
+        if (!server || stopped) { ctx.ui.notify("未运行", "info"); return; }
+        stopped = true;
+        ctx.ui.notify("总 agent 已停止（端口仍占用，关 pi 窗口释放）", "info");
+      },
+    });
     return;
   }
 
