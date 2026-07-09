@@ -72,8 +72,6 @@ type ProjectInfo = { name: string; cwd: string; port: number; lastSeen: number }
 const registry = new Map<string, ProjectInfo>();
 let lastDebug: any = {};
 const ORIGIN_SESSION = process.env.FEISHU_ORIGIN_SESSION || "";
-// 注册总 agent（虚拟条目，list 显示用）
-registry.set("总 agent", { name: "总 agent", cwd: MASTER_CWD, port: 0, pid: 0, lastSeen: Date.now() });
 const processedMsgIds = new Set<string>();
 
 Bun.serve({
@@ -239,9 +237,10 @@ Bun.serve({
           if (pm) {
             const nk = pm[1].toLowerCase();
             const info = registry.get(nk) || Array.from(registry.values()).find(v => v.name.toLowerCase().includes(nk));
-            if (info) fetch(`http://127.0.0.1:${info.port}/ask`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: pm[2], chatId }), signal: AbortSignal.timeout(5000) }).catch(() => {});
-            else sendToChat(chatId, `未找到「${pm[1]}」`).catch(() => {});
-            return resp(JSON.stringify({ code: 0 }));
+            if (info && info.port > 0) {
+              fetch(`http://127.0.0.1:${info.port}/ask`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: pm[2], chatId }), signal: AbortSignal.timeout(5000) }).catch(() => {});
+              return resp(JSON.stringify({ code: 0 }));
+            }
           }
 
           // 直接对话: 先 ack，再 pi -p

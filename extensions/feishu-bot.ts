@@ -84,8 +84,6 @@ export default function (pi: ExtensionAPI) {
     let child: ChildProcess | null = null;
     const replyQueue = new Map<string, PendingItem>();
     const seqRef = { v: 0 };
-    const masterPort = MASTER_PORT + Math.floor(Math.random() * 50) + 50; // 8137-8187
-    let localSrv: ReturnType<typeof Bun.serve> | null = null;
 
     pi.on("agent_end", (event) => { consumeReply(replyQueue, (event as any).messages || []); });
 
@@ -126,31 +124,6 @@ export default function (pi: ExtensionAPI) {
         child.unref();
         child.on("exit", () => { child = null; });
         ctx.ui.notify(`总 agent :${MASTER_PORT}（子进程）`, "info");
-        }
-
-        // 启动本地 /ask 端点（永远执行）
-        if (!localSrv) {
-          localSrv = Bun.serve({
-            port: masterPort,
-            async fetch(req) {
-              const url = new URL(req.url);
-              if (url.pathname === "/ask" && req.method === "POST") {
-                try {
-                  const { question, chatId } = JSON.parse(await req.text());
-                  if (question.trim() === "sessions" || question.trim() === "会话列表") { sendToChat(chatId, listSessions(cwd, "总 agent")).catch(() => {}); return new Response(JSON.stringify({ ok: true })); }
-                  if (question.startsWith("/switch") || question.startsWith("switch ")) { const t = question.replace(/^\/(switch|切换)\s*/, "").replace(/^switch\s+/, "").trim(); switchSession(cwd, t, "总 agent").then(r => sendToChat(chatId, r)).catch(() => {}); return new Response(JSON.stringify({ ok: true })); }
-                  if (question.startsWith("/resume")) { piApi!.sendUserMessage("/resume"); sendToChat(chatId, "已打开 /resume").catch(() => {}); return new Response(JSON.stringify({ ok: true })); }
-                  directAsk(question, chatId, "总 agent", replyQueue, seqRef);
-                  return new Response(JSON.stringify({ ok: true }));
-                } catch { return new Response("{}"); }
-              }
-              return new Response("nf", { status: 404 });
-            },
-          });
-          // 注册到 HTTP 服务
-          try {
-            await fetch(`http://127.0.0.1:${MASTER_PORT}/register`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "总 agent", cwd, port: masterPort }), signal: AbortSignal.timeout(5000) });
-          } catch {}
         }
       },
     });
