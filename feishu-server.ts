@@ -71,6 +71,9 @@ async function switchSession(cwd: string, target: string, label: string) {
 type ProjectInfo = { name: string; cwd: string; port: number; lastSeen: number };
 const registry = new Map<string, ProjectInfo>();
 let lastDebug: any = {};
+const ORIGIN_SESSION = process.env.FEISHU_ORIGIN_SESSION || "";
+// 注册总 agent（虚拟条目，list 显示用）
+registry.set("总 agent", { name: "总 agent", cwd: MASTER_CWD, port: 0, pid: 0, lastSeen: Date.now() });
 const processedMsgIds = new Set<string>();
 
 Bun.serve({
@@ -96,6 +99,12 @@ Bun.serve({
             return resp(JSON.stringify({ code: 0 }));
           lastDebug.lastMsg = text;
 
+          if (text.trim().toLowerCase() === "whoami" || text.trim() === "我是谁") {
+            const uid = dec.event?.sender?.sender_id?.open_id || "未知";
+            sendToChat(chatId, `open_id: ${uid}`).catch(() => {});
+            return resp(JSON.stringify({ code: 0 }));
+          }
+
           if (text.trim().toLowerCase() === "list" || text.trim() === "列表") {
             const items = Array.from(registry.values()), pl = items.map((v, i) => `${i + 1}. ${v.name}`).join("\n");
             sendToChat(chatId, `项目：\n${pl || "暂无"}\n\n编号+问题 如「1 你好」\n项目名+问题 如「F302 你好」\n直接对话→总 agent`).catch(() => {});
@@ -108,11 +117,32 @@ Bun.serve({
             const idx = parseInt(numMatch[1]) - 1;
             if (idx >= 0 && idx < items.length) {
               const info = items[idx];
-              fetch(`http://127.0.0.1:${info.port}/ask`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: numMatch[2], chatId }), signal: AbortSignal.timeout(5000) }).catch(() => {});
+              if (info.port === 0) {
+                // 总 agent：pi -p（用注册的 session 文件）
+                const info2 = registry.get("总 agent");
+                const sf = (info2 as any)?.sessionFile || ORIGIN_SESSION || join(process.env.PI_CODING_AGENT_SESSION_DIR || join(process.env.HOME || process.env.USERPROFILE || "", ".pi", "agent", "sessions"), "feishu-master.jsonl");
+                (async () => {
+                  try {
+                    const { execSync } = await import("node:child_process");
+                    const r = execSync(`pi -p --session "${sf}" "${numMatch[2].replace(/"/g, '\\"')}"`, { encoding: "utf-8", timeout: 300000, maxBuffer: 200 * 1024, cwd: MASTER_CWD, windowsHide: true }).toString().trim();
+                    sendToChat(chatId, `【总 agent】\n${r.slice(0, 4000)}`).catch(() => {});
+                  } catch (e) {}
+                })();
+              } else {
+                fetch(`http://127.0.0.1:${info.port}/ask`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: numMatch[2], chatId }), signal: AbortSignal.timeout(5000) }).catch(() => {});
+              }
             } else { sendToChat(chatId, `编号 ${numMatch[1]} 超出范围 (共${items.length}个)`).catch(() => {}); }
             return resp(JSON.stringify({ code: 0 }));
           }
-          if (text.trim() === "sessions" || text.trim() === "会话列表") { sendToChat(chatId, listSessions(MASTER_CWD, "总 agent")).catch(() => {}); return resp(JSON.stringify({ code: 0 })); }
+          if (text.startsWith("/set-session") || text.startsWith("set-session")) {
+            let sf = text.replace(/^\/?(set-session)\s+/, "").trim();
+            if (sf === "origin") { sf = ORIGIN_SESSION; }
+            if (!sf) { sendToChat(chatId, "用法: set-session <path> 或 set-session origin").catch(() => {}); return resp(JSON.stringify({ code: 0 })); }
+            const info = registry.get("总 agent");
+            if (info) (info as any).sessionFile = sf;
+            sendToChat(chatId, `✅ 会话: ${sf.slice(-50)}`).catch(() => {});
+            return resp(JSON.stringify({ code: 0 }));
+          }
           if (text.trim() === "projects" || text.trim() === "项目列表") {
             const paths = loadPaths();
             if (paths.length === 0) { sendToChat(chatId, "无项目路径。\nadd-path D:/path").catch(() => {}); return resp(JSON.stringify({ code: 0 })); }
@@ -194,7 +224,8 @@ Bun.serve({
 
           // 直接对话: 先 ack，再 pi -p
           const { execSync } = await import("node:child_process");
-          const sf = join(
+          const masterInfo = registry.get("总 agent");
+          const sf = (masterInfo as any)?.sessionFile || ORIGIN_SESSION || join(
             process.env.PI_CODING_AGENT_SESSION_DIR || join(process.env.HOME || process.env.USERPROFILE || "", ".pi", "agent", "sessions"),
             "feishu-master.jsonl"
           );

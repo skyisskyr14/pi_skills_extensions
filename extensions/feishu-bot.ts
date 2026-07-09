@@ -109,6 +109,7 @@ export default function (pi: ExtensionAPI) {
         for (const p of maybeBun) { if (existsSync(p)) { bunExe = p; break; } }
         if (!bunExe) { ctx.ui.notify("未找到 bun.exe，请设置 BUN_PATH 环境变量", "error"); return; }
         if (!serverRunning) {
+          const sessionFile = (ctx as any).sessionManager?.getSessionFile?.() || "";
           child = spawn(bunExe, ["run", serverPath], {
           env: {
             ...process.env,
@@ -117,6 +118,7 @@ export default function (pi: ExtensionAPI) {
             FEISHU_ENCRYPT_KEY: ENCRYPT_KEY,
             FEISHU_PORT: String(MASTER_PORT),
             FEISHU_MASTER_CWD: cwd,
+            FEISHU_ORIGIN_SESSION: sessionFile,
           },
           stdio: "ignore",
           detached: true,
@@ -158,14 +160,9 @@ export default function (pi: ExtensionAPI) {
       async handler(_args, ctx) {
         try {
           const { execSync } = await import("node:child_process");
-          // 杀 8087 + 本地端点端口范围
-          for (const port of ["8087", "8137", "8138", "8139", "8140", "8141", "8142", "8143", "8144", "8145", "8146", "8147", "8148", "8149", "8150", "8151", "8152", "8153", "8154", "8155", "8156", "8157", "8158", "8159", "8160", "8161", "8162", "8163", "8164", "8165", "8166", "8167", "8168", "8169", "8170", "8171", "8172", "8173", "8174", "8175", "8176", "8177", "8178", "8179", "8180", "8181", "8182", "8183", "8184", "8185", "8186"]) {
-            try {
-              const out = execSync(`netstat -ano | findstr ":${port} "`, { encoding: "utf-8" });
-              const m = out.match(/LISTENING\s+(\d+)/g);
-              if (m) for (const pid of [...new Set(m.map(x => x.split(/\s+/).pop()).filter(p => p && p !== "0"))]) execSync(`taskkill /PID ${pid} /F`, { timeout: 3000 });
-            } catch {}
-          }
+          const out = execSync(`netstat -ano | findstr ":8087 "`, { encoding: "utf-8" });
+          const m = out.match(/LISTENING\s+(\d+)/g);
+          if (m) for (const pid of [...new Set(m.map(x => x.split(/\s+/).pop()).filter(p => p && p !== "0"))]) execSync(`taskkill /PID ${pid} /F`, { timeout: 3000 });
           child = null;
           ctx.ui.notify("已停止", "info");
         } catch (e: any) { ctx.ui.notify(`失败: ${e.message}`, "error"); }
