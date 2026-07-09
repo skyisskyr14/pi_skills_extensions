@@ -31,6 +31,8 @@ function projectName(cwd: string) { const p = cwd.replace(/\\/g, "/").split("/")
 
 // ═══ 会话管理（主/项目共用） ═══
 function sessionsDir(cwd: string): string {
+  const local = join(cwd, ".pi", "sessions");
+  if (existsSync(local)) return local;
   const b = process.env.PI_CODING_AGENT_SESSION_DIR || join(process.env.PI_CODING_AGENT_DIR || join(process.env.HOME || process.env.USERPROFILE || "", ".pi", "agent"), "sessions");
   return join(b, "--" + cwd.replace(/[\\:]/g, "-").replace(/\/$/, "") + "--");
 }
@@ -52,9 +54,9 @@ function listSessions(cwd: string, label: string): string {
   for (const [, m] of metas) { if (!visited.has(m.id)) render(m, 0, ++idx); }
   return out + "\n切换：switch 关键词";
 }
-async function switchSession(cwd: string, target: string, label: string): Promise<string> {
+async function switchSession(cwd: string, target: string, label: string, autoExit = false): Promise<string> {
   const metas = buildSessionIndex(cwd); const tl = target.toLowerCase();
-  for (const [, m] of metas) { if (m.name.toLowerCase().includes(tl)) { const { exec } = await import("node:child_process"); exec(`start "PiAgent" cmd /c ""${process.execPath}" --session "${m.file}""`, { cwd }); if (piApi) piApi.sendUserMessage("旧会话（请手动关闭）"); return `✅ 切换到「${m.name}」`; } }
+  for (const [, m] of metas) { if (m.name.toLowerCase().includes(tl)) { const { exec } = await import("node:child_process"); exec(`start "PiAgent" cmd /c ""${process.execPath}" --session "${m.file}""`, { cwd }); if (autoExit) setTimeout(() => process.exit(0), 5000); return `✅ 切换到「${m.name}」`; } }
   return `未匹配「${target}」`;
 }
 
@@ -91,10 +93,8 @@ export default function (pi: ExtensionAPI) {
       description: "启动总 agent（独立子进程）",
       async handler(_args, ctx) {
         // 检测是否已有服务在运行
-        try {
-          const r = await fetch(`http://127.0.0.1:${MASTER_PORT}/feishu/health`, { signal: AbortSignal.timeout(2000) });
-          if (r.ok) { ctx.ui.notify(`总 agent 已在运行 (:${MASTER_PORT})`, "info"); return; }
-        } catch {}
+        let serverRunning = false;
+        try { serverRunning = (await fetch(`http://127.0.0.1:${MASTER_PORT}/feishu/health`, { signal: AbortSignal.timeout(2000) })).ok; } catch {}
         // 找到 feishu-server.ts 路径
         // 找 bun.exe 完整路径（pi 环境中 bun 不在 PATH）
         const agentDir = process.env.PI_CODING_AGENT_DIR || join(process.env.HOME || process.env.USERPROFILE || "", ".pi", "agent");
@@ -108,7 +108,8 @@ export default function (pi: ExtensionAPI) {
         let bunExe = "";
         for (const p of maybeBun) { if (existsSync(p)) { bunExe = p; break; } }
         if (!bunExe) { ctx.ui.notify("未找到 bun.exe，请设置 BUN_PATH 环境变量", "error"); return; }
-        child = spawn(bunExe, ["run", serverPath], {
+        if (!serverRunning) {
+          child = spawn(bunExe, ["run", serverPath], {
           env: {
             ...process.env,
             FEISHU_APP_ID: APP_ID,
@@ -123,8 +124,9 @@ export default function (pi: ExtensionAPI) {
         child.unref();
         child.on("exit", () => { child = null; });
         ctx.ui.notify(`总 agent :${MASTER_PORT}（子进程）`, "info");
+        }
 
-        // 启动本地 /ask 端点（用于总 agent 直接对话）
+        // 启动本地 /ask 端点（永远执行）
         if (!localSrv) {
           localSrv = Bun.serve({
             port: masterPort,
@@ -152,20 +154,21 @@ export default function (pi: ExtensionAPI) {
     });
 
     pi.registerCommand("feishu-bot-stop", {
-      description: "停止总 agent（杀 8087 端口进程）",
+      description: "停止总 agent",
       async handler(_args, ctx) {
         try {
           const { execSync } = await import("node:child_process");
-          const out = execSync(`netstat -ano | findstr ":8087 "`, { encoding: "utf-8" });
-          // 精确匹配 LISTENING 行，提取 PID
-          const matches = out.match(/LISTENING\s+(\d+)/g);
-          if (matches) {
-            const pids = [...new Set(matches.map(m => m.split(/\s+/).pop()).filter(p => p && p !== "0"))];
-            for (const pid of pids) { execSync(`taskkill /PID ${pid} /F`, { timeout: 3000 }); }
+          // 杀 8087 + 本地端点端口范围
+          for (const port of ["8087", "8137", "8138", "8139", "8140", "8141", "8142", "8143", "8144", "8145", "8146", "8147", "8148", "8149", "8150", "8151", "8152", "8153", "8154", "8155", "8156", "8157", "8158", "8159", "8160", "8161", "8162", "8163", "8164", "8165", "8166", "8167", "8168", "8169", "8170", "8171", "8172", "8173", "8174", "8175", "8176", "8177", "8178", "8179", "8180", "8181", "8182", "8183", "8184", "8185", "8186"]) {
+            try {
+              const out = execSync(`netstat -ano | findstr ":${port} "`, { encoding: "utf-8" });
+              const m = out.match(/LISTENING\s+(\d+)/g);
+              if (m) for (const pid of [...new Set(m.map(x => x.split(/\s+/).pop()).filter(p => p && p !== "0"))]) execSync(`taskkill /PID ${pid} /F`, { timeout: 3000 });
+            } catch {}
           }
           child = null;
-          ctx.ui.notify("总 agent 已停止", "info");
-        } catch (e: any) { ctx.ui.notify(`停止失败: ${e.message}`, "error"); }
+          ctx.ui.notify("已停止", "info");
+        } catch (e: any) { ctx.ui.notify(`失败: ${e.message}`, "error"); }
       },
     });
     return;
@@ -189,7 +192,7 @@ export default function (pi: ExtensionAPI) {
           try {
             const { question, chatId } = JSON.parse(await req.text());
             if (question.trim() === "sessions" || question.trim() === "会话列表") { sendToChat(chatId, listSessions(cwd, name)).catch(() => {}); return new Response(JSON.stringify({ ok: true })); }
-            if (question.startsWith("/switch") || question.startsWith("switch ")) { const t = question.replace(/^\/(switch|切换)\s*/, "").replace(/^switch\s+/, "").trim(); switchSession(cwd, t, name).then(r => sendToChat(chatId, r)).catch(() => {}); return new Response(JSON.stringify({ ok: true })); }
+            if (question.startsWith("/switch") || question.startsWith("switch ")) { const t = question.replace(/^\/(switch|切换)\s*/, "").replace(/^switch\s+/, "").trim(); switchSession(cwd, t, name, true).then(r => sendToChat(chatId, r)).catch(() => {}); return new Response(JSON.stringify({ ok: true })); }
             if (question.startsWith("/resume")) { piApi!.sendUserMessage("/resume"); sendToChat(chatId, "已打开 /resume").catch(() => {}); return new Response(JSON.stringify({ ok: true })); }
             directAsk(question, chatId, name, replyQueue, seqRef);
             return new Response(JSON.stringify({ ok: true }));

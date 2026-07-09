@@ -1,6 +1,6 @@
 {
   "providers": {
-    "volcengine": {
+    "lf": {
       "baseUrl": "https://ark.cn-beijing.volces.com/api/coding/v3",
       "api": "openai-completions",
       "apiKey": "ark-bd2f4b05-86ca-4cf2-9d5c-b09937a22dc2-6db6d",
@@ -126,6 +126,93 @@
           "reasoning": true,
           "input": ["text", "image"],
           "contextWindow": 256000,
+          "maxTokens": 4096,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        }
+      ]
+    },
+    "jlz": {
+      "baseUrl": "https://api.jianglizi.xyz:10000/v1",
+      "api": "openai-completions",
+      "apiKey": "sk-ynKmmKVaVBL7IeovqdGXsOPfeetZ6Be7XnDcE6FLwpcTYtC3",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "maxTokensField": "max_tokens",
+        "supportsUsageInStreaming": false
+      },
+      "models": [
+        {
+          "id": "deepseek-v4-flash",
+          "name": "DS V4 Flash (jlz)",
+          "reasoning": false,
+          "input": ["text"],
+          "contextWindow": 1024000,
+          "maxTokens": 4096,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "name": "DS V4 Pro (jlz)",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 1024000,
+          "maxTokens": 4096,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+          "compat": {
+            "thinkingFormat": "deepseek"
+          }
+        },
+        {
+          "id": "glm-5.1",
+          "name": "GLM 5.1 (jlz)",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 1024000,
+          "maxTokens": 4096,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
+          "id": "glm-5.2",
+          "name": "GLM 5.2 (jlz)",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 1024000,
+          "maxTokens": 4096,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
+          "id": "kimi-k2.6",
+          "name": "Kimi K2.6 (jlz)",
+          "reasoning": true,
+          "input": ["text", "image"],
+          "contextWindow": 256000,
+          "maxTokens": 4096,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
+          "id": "kimi-k2.7-code",
+          "name": "Kimi K2.7 Code (jlz)",
+          "reasoning": true,
+          "input": ["text", "image"],
+          "contextWindow": 256000,
+          "maxTokens": 4096,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
+          "id": "minimax-m3",
+          "name": "MiniMax M3 (jlz)",
+          "reasoning": false,
+          "input": ["text", "image"],
+          "contextWindow": 512000,
+          "maxTokens": 4096,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
+          "id": "qwen3-coder-next",
+          "name": "Qwen3 Coder Next (jlz)",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 128000,
           "maxTokens": 4096,
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         }

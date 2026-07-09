@@ -2,8 +2,13 @@
 // 由 feishu-bot.ts 的 start 命令 spawn，stop 命令 kill
 
 import { createHash, createCipheriv, createDecipheriv } from "node:crypto";
-import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+
+// ── 项目路径配置 ──
+const PATHS_FILE = join(process.env.PI_CODING_AGENT_DIR || join(process.env.HOME || process.env.USERPROFILE || "", ".pi", "agent"), "project-paths.json");
+function loadPaths(): string[] { try { return JSON.parse(readFileSync(PATHS_FILE, "utf-8")); } catch { return []; } }
+function savePaths(p: string[]) { writeFileSync(PATHS_FILE, JSON.stringify(p, null, 2)); }
 
 const APP_ID = process.env.FEISHU_APP_ID || "";
 const APP_SECRET = process.env.FEISHU_APP_SECRET || "";
@@ -66,6 +71,7 @@ async function switchSession(cwd: string, target: string, label: string) {
 type ProjectInfo = { name: string; cwd: string; port: number; lastSeen: number };
 const registry = new Map<string, ProjectInfo>();
 let lastDebug: any = {};
+const processedMsgIds = new Set<string>();
 
 Bun.serve({
   port: PORT,
@@ -81,6 +87,10 @@ Bun.serve({
         if (dec.type === "url_verification") return new Response(JSON.stringify({ challenge: dec.challenge }), { headers: { "Content-Type": "application/json" } });
 
         if (dec.header?.event_type === "im.message.receive_v1") {
+          const msgId = dec.event?.message?.message_id || dec.header?.event_id || "";
+          if (processedMsgIds.has(msgId)) return resp(JSON.stringify({ code: 0 }));
+          if (processedMsgIds.size > 200) processedMsgIds.clear();
+          processedMsgIds.add(msgId);
           const c = JSON.parse(dec.event?.message?.content || "{}"), text = c.text || "", chatId = dec.event?.message?.chat_id;
           if (!text || !chatId || dec.event?.sender?.sender_type !== "user")
             return resp(JSON.stringify({ code: 0 }));
@@ -88,10 +98,85 @@ Bun.serve({
 
           if (text.trim().toLowerCase() === "list" || text.trim() === "列表") {
             const items = Array.from(registry.values()), pl = items.map((v, i) => `${i + 1}. ${v.name}`).join("\n");
-            sendToChat(chatId, `【总 agent】\n${pl ? "项目：\n" + pl : "暂无"}\n直接发问题→回答\n项目名+问题→路由`).catch(() => {});
+            sendToChat(chatId, `项目：\n${pl || "暂无"}\n\n编号+问题 如「1 你好」\n项目名+问题 如「F302 你好」\n直接对话→总 agent`).catch(() => {});
+            return resp(JSON.stringify({ code: 0 }));
+          }
+          // 编号路由: "1 问题"
+          const numMatch = text.match(/^(\d+)\s+(.+)/);
+          if (numMatch) {
+            const items = Array.from(registry.values());
+            const idx = parseInt(numMatch[1]) - 1;
+            if (idx >= 0 && idx < items.length) {
+              const info = items[idx];
+              fetch(`http://127.0.0.1:${info.port}/ask`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: numMatch[2], chatId }), signal: AbortSignal.timeout(5000) }).catch(() => {});
+            } else { sendToChat(chatId, `编号 ${numMatch[1]} 超出范围 (共${items.length}个)`).catch(() => {}); }
             return resp(JSON.stringify({ code: 0 }));
           }
           if (text.trim() === "sessions" || text.trim() === "会话列表") { sendToChat(chatId, listSessions(MASTER_CWD, "总 agent")).catch(() => {}); return resp(JSON.stringify({ code: 0 })); }
+          if (text.trim() === "projects" || text.trim() === "项目列表") {
+            const paths = loadPaths();
+            if (paths.length === 0) { sendToChat(chatId, "无项目路径。\nadd-path D:/path").catch(() => {}); return resp(JSON.stringify({ code: 0 })); }
+            let out = "";
+            for (const base of paths) {
+              out += `📁 ${base}\n`;
+              if (!existsSync(base)) { out += "  (目录不存在)\n"; continue; }
+              const dirs = readdirSync(base, { withFileTypes: true }).filter(d => d.isDirectory() && existsSync(join(base, d.name, ".pi"))).map(d => d.name);
+              if (dirs.length === 0) out += "  (无 pi 项目)\n";
+              else dirs.forEach((d, i) => out += `  ${i + 1}. ${d}\n`);
+            }
+            out += "add-path / remove-path / projects";
+            sendToChat(chatId, out).catch(() => {});
+            return resp(JSON.stringify({ code: 0 }));
+          }
+          if (text.startsWith("add-path ") || text.startsWith("添加路径 ")) {
+            const p = text.replace(/^(add-path|添加路径)\s+/, "").trim();
+            if (!existsSync(p)) { sendToChat(chatId, `不存在: ${p}`).catch(() => {}); return resp(JSON.stringify({ code: 0 })); }
+            const paths = loadPaths();
+            if (paths.includes(p)) { sendToChat(chatId, "已存在").catch(() => {}); return resp(JSON.stringify({ code: 0 })); }
+            paths.push(p); savePaths(paths);
+            sendToChat(chatId, `✅ 已添加 ${p}`).catch(() => {});
+            return resp(JSON.stringify({ code: 0 }));
+          }
+          if (text.startsWith("remove-path ") || text.startsWith("移除路径 ")) {
+            const p = text.replace(/^(remove-path|移除路径)\s+/, "").trim();
+            let paths = loadPaths(); paths = paths.filter(x => x !== p); savePaths(paths);
+            sendToChat(chatId, `✅ 已移除 ${p}`).catch(() => {});
+            return resp(JSON.stringify({ code: 0 }));
+          }
+          if (text.startsWith("start-pi ") || text.startsWith("启动 ")) {
+            const name = text.replace(/^(start-pi|启动)\s+/, "").trim();
+            const paths = loadPaths();
+            const found: string[] = [];
+            for (const base of paths) {
+              if (!existsSync(base)) continue;
+              for (const d of readdirSync(base, { withFileTypes: true })) {
+                if (d.isDirectory() && d.name.toLowerCase().includes(name.toLowerCase())) found.push(join(base, d.name));
+              }
+            }
+            if (found.length === 0) { sendToChat(chatId, `未找到「${name}」`).catch(() => {}); return resp(JSON.stringify({ code: 0 })); }
+            if (found.length === 1) {
+              const { exec } = await import("node:child_process");
+              exec(`start "Pi" pi`, { cwd: found[0] });
+              sendToChat(chatId, `✅ 已启动 ${found[0]}`).catch(() => {});
+              return resp(JSON.stringify({ code: 0 }));
+            }
+            sendToChat(chatId, `多个匹配:\n${found.map((p, i) => `${i + 1}. ${p}`).join("\n")}\n回复编号选择`).catch(() => {});
+            // 记下待选列表
+            (lastDebug as any)._startPiChoices = found;
+            return resp(JSON.stringify({ code: 0 }));
+          }
+          // 编号选择启动
+          if (lastDebug._startPiChoices && /^\d+$/.test(text.trim())) {
+            const idx = parseInt(text.trim()) - 1;
+            const choices = lastDebug._startPiChoices;
+            if (idx >= 0 && idx < choices.length) {
+              const { exec } = await import("node:child_process");
+              exec(`start "Pi" pi`, { cwd: choices[idx] });
+              sendToChat(chatId, `✅ 已启动 ${choices[idx]}`).catch(() => {});
+              delete lastDebug._startPiChoices;
+              return resp(JSON.stringify({ code: 0 }));
+            }
+          }
           if (text.startsWith("/switch") || text.startsWith("switch ")) {
             const t = text.replace(/^\/(switch|切换)\s*/, "").replace(/^switch\s+/, "").trim();
             switchSession(MASTER_CWD, t, "总 agent").then(r => sendToChat(chatId, r)).catch(() => {});
@@ -107,13 +192,23 @@ Bun.serve({
             return resp(JSON.stringify({ code: 0 }));
           }
 
-          // 直接对话：转发到总 agent 本地端点
-          const masterInfo = registry.get("总 agent");
-          if (masterInfo) {
-            fetch(`http://127.0.0.1:${masterInfo.port}/ask`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: text, chatId }), signal: AbortSignal.timeout(5000) }).catch(() => {});
-          } else {
-            sendToChat(chatId, "总 agent 未就绪，请等待注册完成").catch(() => {});
-          }
+          // 直接对话: 先 ack，再 pi -p
+          const { execSync } = await import("node:child_process");
+          const sf = join(
+            process.env.PI_CODING_AGENT_SESSION_DIR || join(process.env.HOME || process.env.USERPROFILE || "", ".pi", "agent", "sessions"),
+            "feishu-master.jsonl"
+          );
+          const q = text, cid = chatId;
+          const mcwd = MASTER_CWD;
+          // 异步处理，不阻塞飞书事件响应
+          (async () => {
+            try {
+              const r = execSync(`pi -p --session "${sf}" "${q.replace(/"/g, '\\"')}"`, {
+                encoding: "utf-8", timeout: 180_000, maxBuffer: 200 * 1024, cwd: mcwd, windowsHide: true,
+              }).toString().trim() || "（无回复）";
+              sendToChat(cid, `【总 agent】\n${r.slice(0, 4000)}`).catch(() => {});
+            } catch (e: any) { sendToChat(cid, `失败: ${e.stderr || e.message}`).catch(() => {}); }
+          })();
           return resp(JSON.stringify({ code: 0 }));
         }
       } catch (e: any) { lastDebug.error = e.message; }
