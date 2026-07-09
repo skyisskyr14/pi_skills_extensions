@@ -56,7 +56,7 @@ function listSessions(cwd: string, label: string): string {
 }
 async function switchSession(cwd: string, target: string, label: string, autoExit = false): Promise<string> {
   const metas = buildSessionIndex(cwd); const tl = target.toLowerCase();
-  for (const [, m] of metas) { if (m.name.toLowerCase().includes(tl)) { const { exec } = await import("node:child_process"); exec(`start "PiAgent" cmd /c ""${process.execPath}" --session "${m.file}""`, { cwd }); if (autoExit) setTimeout(() => process.exit(0), 5000); return `✅ 切换到「${m.name}」`; } }
+  for (const [, m] of metas) { if (m.name.toLowerCase().includes(tl)) { const { exec, execSync } = await import("node:child_process"); const oldPid = process.pid; exec(`start "PiAgent" cmd /c ""${process.execPath}" --session "${m.file}""`, { cwd }); if (autoExit) setTimeout(() => { try { execSync(`taskkill /PID ${oldPid} /F`, { timeout: 3000 }); } catch {} }, 5000); return `✅ 切换到「${m.name}」`; } }
   return `未匹配「${target}」`;
 }
 

@@ -143,6 +143,17 @@ Bun.serve({
             sendToChat(chatId, `✅ 会话: ${sf.slice(-50)}`).catch(() => {});
             return resp(JSON.stringify({ code: 0 }));
           }
+
+          if (text.trim() === "sessions" || text.trim() === "会话列表") {
+            try {
+              const r = listSessions(MASTER_CWD, "总 agent");
+              await sendToChat(chatId, r);
+            } catch (e: any) {
+              await sendToChat(chatId, `错误: ${e.message}`);
+            }
+            return resp(JSON.stringify({ code: 0 }));
+          }
+
           if (text.trim() === "projects" || text.trim() === "项目列表") {
             const paths = loadPaths();
             if (paths.length === 0) { sendToChat(chatId, "无项目路径。\nadd-path D:/path").catch(() => {}); return resp(JSON.stringify({ code: 0 })); }
@@ -209,7 +220,18 @@ Bun.serve({
           }
           if (text.startsWith("/switch") || text.startsWith("switch ")) {
             const t = text.replace(/^\/(switch|切换)\s*/, "").replace(/^switch\s+/, "").trim();
-            switchSession(MASTER_CWD, t, "总 agent").then(r => sendToChat(chatId, r)).catch(() => {});
+            const metas = buildSessionIndex(MASTER_CWD); const tl = t.toLowerCase();
+            for (const [, m] of metas) {
+              if (m.name.toLowerCase().includes(tl)) {
+                const { exec } = await import("node:child_process");
+                exec(`start "PiAgent" cmd /c ""${process.execPath}" --session "${m.file}""`, { cwd: MASTER_CWD });
+                const info = registry.get("总 agent");
+                if (info) (info as any).sessionFile = m.file;
+                sendToChat(chatId, `✅ 已切换「${m.name}」`).catch(() => {});
+                return resp(JSON.stringify({ code: 0 }));
+              }
+            }
+            sendToChat(chatId, `未找到「${t}」`).catch(() => {});
             return resp(JSON.stringify({ code: 0 }));
           }
 
