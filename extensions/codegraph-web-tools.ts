@@ -1,3 +1,7 @@
+/**
+ * CodeGraph 工具扩展
+ * 提供 codegraph_explore 和 codegraph_node 工具，用于语义化代码库探索
+ */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { execSync } from "node:child_process";
@@ -22,14 +26,12 @@ function run(cmd: string, opts?: { timeout?: number; cwd?: string }) {
   }
 }
 
-// Walk up from cwd to find nearest valid .codegraph/ index
-// A valid index has db.sqlite or graph.db or at least 3 entries in the dir
+// 向上遍历查找最近的 .codegraph/ 索引目录
 function findCodegraphRoot(cwd: string): string | null {
   let dir = resolve(cwd);
   for (let i = 0; i < 10; i++) {
     const cg = join(dir, ".codegraph");
     if (existsSync(cg)) {
-      // must have an actual index, not just leftover daemons/ dir
       try {
         const entries = require("node:fs").readdirSync(cg);
         const hasIndex = entries.some((e: string) =>
@@ -45,11 +47,17 @@ function findCodegraphRoot(cwd: string): string | null {
   return null;
 }
 
+function escapeArg(s: string): string {
+  if (process.platform === "win32") {
+    return `"${s.replace(/"/g, '\\"')}"`;
+  }
+  return `'${s.replace(/'/g, "'\\''")}'`;
+}
+
 // ── extension ──────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
-  // ── 语言约束：每次对话注入中文要求 ──────────────────────────
-
+  // 语言约束：每次对话注入中文要求
   pi.on("before_agent_start", async (event) => {
     return {
       systemPrompt: event.systemPrompt +
@@ -118,91 +126,4 @@ export default function (pi: ExtensionAPI) {
       };
     },
   });
-
-  // ── url_fetch ──────────────────────────────────────────────────
-
-  pi.registerTool({
-    name: "url_fetch",
-    label: "URL Fetch",
-    description:
-      "Fetch content from a URL. Returns the HTTP response body as text (truncated). Use for reading documentation, API responses, or any web page.",
-    promptSnippet: "url_fetch <url> — fetch a URL and return its text content",
-    promptGuidelines: [
-      "Use url_fetch to read web pages, documentation URLs, GitHub raw files, or API endpoints. Prefer it over asking the user to paste content.",
-    ],
-    parameters: Type.Object({
-      url: Type.String({ description: "The URL to fetch" }),
-    }),
-    async execute(_id, params, signal) {
-      const c = `curl -sL --max-time 15 "${params.url}" 2>&1`;
-      const r = run(c, { timeout: 20_000 });
-      const text = r.text.slice(0, 50_000); // ponytail: 50K cap, add config if needed
-      return {
-        content: [{ type: "text", text: r.ok ? text : `Fetch error: ${text}` }],
-        details: {},
-      };
-    },
-  });
-
-  // ── web_search ─────────────────────────────────────────────────
-
-  pi.registerTool({
-    name: "web_search",
-    label: "Web Search",
-    description:
-      "Search the web using Bing. Returns result titles, snippets, and URLs. Use for finding documentation, solutions, or up-to-date information.",
-    promptSnippet: "web_search <query> — search the web via Bing",
-    promptGuidelines: [
-      "Use web_search when you need information that isn't in the codebase or training data. Follow up with url_fetch to read promising results.",
-    ],
-    parameters: Type.Object({
-      query: Type.String({ description: "Search query" }),
-    }),
-    async execute(_id, params, signal) {
-      const q = encodeURIComponent(params.query);
-      const raw = run(
-        `curl -sL --max-time 10 -H "User-Agent: Mozilla/5.0" "https://cn.bing.com/search?q=${q}&setlang=zh-cn" 2>&1`,
-        { timeout: 15_000 },
-      );
-      if (!raw.ok) {
-        return {
-          content: [{ type: "text", text: `Search error: ${raw.text}` }],
-          details: {},
-        };
-      }
-      // Parse Bing results: each result is an <li class="b_algo"> with <h2><a>, then <p>
-      const links: string[] = [];
-      const blockRe = /<li class="b_algo"[^>]*>([\s\S]*?)<\/li>/gi;
-      let blockMatch: RegExpExecArray | null;
-      while ((blockMatch = blockRe.exec(raw.text)) !== null) {
-        const block = blockMatch[1];
-        const titleM = /<h2[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i.exec(block);
-        const snippetM = /<p[^>]*>([\s\S]*?)<\/p>/i.exec(block);
-        if (titleM) {
-          const url = titleM[1];
-          const title = titleM[2].replace(/<[^>]+>/g, "").trim();
-          const snippet = snippetM ? snippetM[1].replace(/<[^>]+>/g, "").trim() : "";
-          links.push(`${title}\n  ${url}\n  ${snippet}`);
-        }
-      }
-      if (links.length === 0) {
-        const stripped = raw.text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 3000);
-        return {
-          content: [{ type: "text", text: stripped || "No results found." }],
-          details: {},
-        };
-      }
-      return {
-        content: [{ type: "text", text: links.slice(0, 12).join("\n\n") }],
-        details: {},
-      };
-    },
-  });
-}
-
-function escapeArg(s: string): string {
-  if (process.platform === "win32") {
-    return `"${s.replace(/"/g, '\\"')}"`;
-  }
-  return `'${s.replace(/'/g, "'\\''")}'`;
 }
