@@ -250,16 +250,14 @@ Bun.serve({
             process.env.PI_CODING_AGENT_SESSION_DIR || join(process.env.HOME || process.env.USERPROFILE || "", ".pi", "agent", "sessions"),
             "feishu-master.jsonl"
           );
-          const q = text, cid = chatId;
-          const mcwd = MASTER_CWD;
-          // 异步处理，不阻塞飞书事件响应
+          const q = text, cid = chatId, mcwd = MASTER_CWD;
           (async () => {
             try {
               const r = execSync(`pi -p --session "${sf}" "${q.replace(/"/g, '\\"')}"`, {
                 encoding: "utf-8", timeout: 180_000, maxBuffer: 200 * 1024, cwd: mcwd, windowsHide: true,
               }).toString().trim() || "（无回复）";
-              sendToChat(cid, `【总 agent】\n${r.slice(0, 4000)}`).catch(() => {});
-            } catch (e: any) { sendToChat(cid, `失败: ${e.stderr || e.message}`).catch(() => {}); }
+              if (lastDebug.lastMsg === q) sendToChat(cid, `【总 agent】\n${r.slice(0, 4000)}`).catch(() => {});
+            } catch (e: any) { if (lastDebug.lastMsg === q) sendToChat(cid, `失败: ${e.stderr || e.message}`).catch(() => {}); }
           })();
           return resp(JSON.stringify({ code: 0 }));
         }
