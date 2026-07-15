@@ -6,3 +6,4 @@ pi install npm:pi-subagents
 pi install npm:pi-todo
 pi install git:github.com/DietrichGebert/ponytail@4.8.4
 pi install git:github.com/obra/superpowers
+pi install git:github.com/Leonxlnx/taste-skill
