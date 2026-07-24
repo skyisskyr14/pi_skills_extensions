@@ -7,6 +7,8 @@ description: "Git operations: branch create/switch, stage+commit, push to named 
 
 两种使用方式：对话触发词 或 `/skill:git-quick` 命令。
 
+**🚫 核心规则：绝不执行任何 git 命令。只展示命令和说明，由用户自己亲自执行。**
+
 ---
 
 ## 对话触发（适合一次走完 add→commit→push）
@@ -17,7 +19,7 @@ description: "Git operations: branch create/switch, stage+commit, push to named 
 - **"quick commit"**
 - **"提交并推送"**
 
-流程：`git status` → 确认改动 → `git add -u` → 用户提供 commit message → `git commit` → `git remote -v` 列出 → 用户指定 remote → `git push`。
+流程：`git status` → 确认改动 → 展示 `git add` 命令 → 用户提供 commit message → 展示 `git commit` 命令 → 用户确认已提交 → `git remote -v` 列出 → 用户指定 remote → 展示 `git push` 命令。
 
 ---
 
@@ -29,16 +31,15 @@ description: "Git operations: branch create/switch, stage+commit, push to named 
 /skill:git-quick branch <分支名>
 ```
 
-执行：`git checkout -b <分支名>`
+展示命令：`git checkout -b <分支名>`
 
-### commit — 暂存所有修改并提交
+### commit — 暂存修改，展示 commit 命令
 
 ```
 /skill:git-quick commit <提交信息>
 ```
 
-执行：`git add -u` → `git commit -m "<提交信息>"`  
-新增 untracked 源码文件先 `git add`，编译产物/二进制跳过。
+展示命令：`git add -u` 或 `git add -A`，然后 `git commit -m "<提交信息>"`  
 
 ### push — 推送到指定远程仓库
 
@@ -46,15 +47,12 @@ description: "Git operations: branch create/switch, stage+commit, push to named 
 /skill:git-quick push <remote名称>
 ```
 
-执行：`git remote -v` 列出所有 → `git push -u <指定remote> <当前分支>`  
-远程没有该分支则自动创建并设置 upstream。
-
-**推送重试机制**：`git push` 失败后自动重试，最多 3 次，每次间隔 2 秒。3 次全部失败后才告知用户网络不通。
+展示命令：`git push -u <指定remote> <当前分支>`
 
 ---
 
 ## 注意事项
 
 - 不 rebase，不 merge，不强制推送
-- 必须用户指定 remote，绝不自动推所有
-- push 最多重试 3 次，失败后提示用户检查网络/代理
+- 所有 git 命令仅展示，由用户自己执行
+- 必须用户指定 remote，绝不代推
